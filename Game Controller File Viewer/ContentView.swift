@@ -29,7 +29,10 @@ struct DocumentPicker: UIViewControllerRepresentable {
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             parent.presentationMode.wrappedValue.dismiss()
-            for url in urls {
+            
+            let sortedUrls = urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            
+            for url in sortedUrls {
                 if let image = UIImage(contentsOfFile: url.path) {
                     DispatchQueue.main.async {
                         self.parent.importedImages.append(image)
@@ -37,6 +40,7 @@ struct DocumentPicker: UIViewControllerRepresentable {
                 }
             }
         }
+
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             parent.presentationMode.wrappedValue.dismiss()
