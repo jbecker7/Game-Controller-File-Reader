@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import MobileCoreServices
+import GameController
 
 struct DocumentPicker: UIViewControllerRepresentable {
     @Binding var importedImages: [UIImage]
@@ -51,6 +52,23 @@ struct DocumentPicker: UIViewControllerRepresentable {
 struct ContentView: View {
     @State private var importedImages: [UIImage] = []
     @State private var showDocumentPicker = false
+    @State private var currentImageIndex = 0
+
+    private func handleControllerInput() {
+        guard let controller = GCController.controllers().first else { return }
+        
+        let dpad = controller.extendedGamepad?.dpad
+        
+        if dpad?.left.isPressed == true {
+            if currentImageIndex > 0 {
+                currentImageIndex -= 1
+            }
+        } else if dpad?.right.isPressed == true {
+            if currentImageIndex < importedImages.count - 1 {
+                currentImageIndex += 1
+            }
+        }
+    }
 
     var body: some View {
         VStack {
@@ -59,7 +77,7 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .foregroundColor(.gray)
             } else {
-                TabView {
+                TabView(selection: $currentImageIndex) {
                     ForEach(importedImages.indices, id: \.self) { index in
                         Image(uiImage: importedImages[index])
                             .resizable()
@@ -83,6 +101,12 @@ struct ContentView: View {
             }
         }
         .padding()
+        .onAppear {
+            let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                handleControllerInput()
+            }
+            timer.tolerance = 0.05
+            RunLoop.current.add(timer, forMode: .common)
+        }
     }
 }
-
