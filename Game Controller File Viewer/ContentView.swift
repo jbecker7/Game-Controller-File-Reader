@@ -1,10 +1,11 @@
 import SwiftUI
 import UIKit
+import PDFKit
 import MobileCoreServices
 import GameController
 
 struct DocumentPicker: UIViewControllerRepresentable {
-    @Binding var importedImages: [UIImage]
+    @Binding var importedPDFs: [URL]
     @Environment(\.presentationMode) private var presentationMode
 
     func makeCoordinator() -> Coordinator {
@@ -12,12 +13,11 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image], asCopy: true)
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf], asCopy: true)
         picker.delegate = context.coordinator
-        picker.allowsMultipleSelection = true // Enable multiple image selection
+        picker.allowsMultipleSelection = true
         return picker
     }
-
 
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
 
@@ -30,18 +30,10 @@ struct DocumentPicker: UIViewControllerRepresentable {
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             parent.presentationMode.wrappedValue.dismiss()
-            
-            let sortedUrls = urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
-            
-            for url in sortedUrls {
-                if let image = UIImage(contentsOfFile: url.path) {
-                    DispatchQueue.main.async {
-                        self.parent.importedImages.append(image)
-                    }
-                }
+            DispatchQueue.main.async {
+                self.parent.importedPDFs = urls
             }
         }
-
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             parent.presentationMode.wrappedValue.dismiss()
@@ -49,39 +41,39 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 }
 
-struct ContentView: View {
-    @State private var importedImages: [UIImage] = []
-    @State private var showDocumentPicker = false
-    @State private var currentImageIndex = 0
+struct PDFKitView: UIViewRepresentable {
+    let url: URL
 
-    private func handleControllerInput() {
-        guard let controller = GCController.controllers().first else { return }
-        
-        let dpad = controller.extendedGamepad?.dpad
-        
-        if dpad?.left.isPressed == true {
-            if currentImageIndex > 0 {
-                currentImageIndex -= 1
-            }
-        } else if dpad?.right.isPressed == true {
-            if currentImageIndex < importedImages.count - 1 {
-                currentImageIndex += 1
-            }
-        }
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .horizontal
+        return pdfView
     }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        uiView.document = PDFDocument(url: url)
+        uiView.usePageViewController(true, withViewOptions: [UIPageViewController.OptionsKey.interPageSpacing: 20])
+    }
+}
+
+struct ContentView: View {
+    @State private var importedPDFs: [URL] = []
+    @State private var showDocumentPicker = false
+    @State private var currentPDFIndex = 0
+    @State private var currentController: GCController?
 
     var body: some View {
         VStack {
-            if importedImages.isEmpty {
-                Text("No images imported")
+            if importedPDFs.isEmpty {
+                Text("No PDFs imported")
                     .font(.largeTitle)
                     .foregroundColor(.gray)
             } else {
-                TabView(selection: $currentImageIndex) {
-                    ForEach(importedImages.indices, id: \.self) { index in
-                        Image(uiImage: importedImages[index])
-                            .resizable()
-                            .scaledToFit()
+                TabView(selection: $currentPDFIndex) {
+                    ForEach(importedPDFs.indices, id: \.self) { index in
+                        PDFKitView(url: importedPDFs[index])
                             .tag(index)
                     }
                 }
@@ -97,13 +89,33 @@ struct ContentView: View {
             }
             .padding()
             .sheet(isPresented: $showDocumentPicker) {
-                DocumentPicker(importedImages: $importedImages)
+                DocumentPicker(importedPDFs: $importedPDFs)
             }
         }
         .padding()
         .onAppear {
             let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                handleControllerInput()
+                if self.currentController == nil {
+                    self.currentController = GCController.controllers().first
+                }
+                
+                DispatchQueue.main.async {
+                    if self.currentController?.extendedGamepad?.dpad.right.isPressed == true {
+                        if self.currentPDFIndex < self.importedPDFs.count - 1 {
+                            self.currentPDFIndex += 1
+                        }
+                    } else if self.currentController?.extendedGamepad?.dpad.left.isPressed == true {
+                        if self.currentPDFIndex > 0 {
+                            self.currentPDFIndex -= 1
+                        }
+                    }
+                }
+
+                self.currentController?.extendedGamepad?.buttonMenu.valueChangedHandler = { (button, value, pressed) in
+                    if pressed {
+                        self.showDocumentPicker = true
+                    }
+                }
             }
             timer.tolerance = 0.05
             RunLoop.current.add(timer, forMode: .common)
